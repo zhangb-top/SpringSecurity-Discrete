@@ -21,35 +21,51 @@
 2. 引入依赖
 
    ```xml
-   <dependencies>
-       <dependency>
-           <groupId>org.springframework.boot</groupId>
-           <artifactId>spring-boot-starter-security</artifactId>
-       </dependency>
+   <dependency>
+       <groupId>org.springframework.boot</groupId>
+       <artifactId>spring-boot-starter-security</artifactId>
+   </dependency>
    
-       <dependency>
-           <groupId>org.springframework.boot</groupId>
-           <artifactId>spring-boot-starter-web</artifactId>
-       </dependency>
+   <dependency>
+       <groupId>org.springframework.boot</groupId>
+       <artifactId>spring-boot-starter-web</artifactId>
+   </dependency>
    
-       <dependency>
-           <groupId>com.mysql</groupId>
-           <artifactId>mysql-connector-j</artifactId>
-           <scope>runtime</scope>
-       </dependency>
+   <dependency>
+       <groupId>com.mysql</groupId>
+       <artifactId>mysql-connector-j</artifactId>
+       <scope>runtime</scope>
+   </dependency>
    
-       <dependency>
-           <groupId>org.projectlombok</groupId>
-           <artifactId>lombok</artifactId>
-           <optional>true</optional>
-       </dependency>
+   <dependency>
+       <groupId>org.projectlombok</groupId>
+       <artifactId>lombok</artifactId>
+       <optional>true</optional>
+   </dependency>
    
-       <dependency>
-           <groupId>com.baomidou</groupId>
-           <artifactId>mybatis-plus-boot-starter</artifactId>
-           <version>3.5.3.1</version>
-       </dependency>
-   </dependencies>
+   <dependency>
+       <groupId>com.baomidou</groupId>
+       <artifactId>mybatis-plus-boot-starter</artifactId>
+       <version>3.5.3.1</version>
+   </dependency>
+   
+   <dependency>
+       <groupId>io.jsonwebtoken</groupId>
+       <artifactId>jjwt</artifactId>
+       <version>0.9.1</version>
+   </dependency>
+   
+   <dependency>
+       <groupId>cn.hutool</groupId>
+       <artifactId>hutool-all</artifactId>
+       <version>5.5.8</version>
+   </dependency>
+   
+   <dependency>
+       <groupId>javax.xml.bind</groupId>
+       <artifactId>jaxb-api</artifactId>
+       <version>2.3.0</version>
+   </dependency>
    ```
 
 3. 配置数据库信息
@@ -321,6 +337,8 @@
            http.authorizeRequests()
                    // 登录和注册接口不需要认证
                    .antMatchers("/users/login", "/users/register").permitAll()
+               	// 跨域请求会先发出一个OPTIONS请求
+           		.antMatchers(HttpMethod.OPTIONS).permitAll()
                    // 除了上面的其他的都需要认证
                    .anyRequest().authenticated()
    
@@ -485,7 +503,473 @@
 
    <img src="http://cdn.zhangb.top/nofound.jpg" alt="nofound" style="zoom:50%;" />
 
-## 4、开启csrf保护（REST风格不可开启）
+## 4、配置注销
+
+1. `MyLogoutSuccessHandler`：实现`LogoutSuccessHandler`接口，自定义注销的逻辑
+
+   ```java
+   **
+    * 自定义注销逻辑
+    */
+   @Component
+   public class MyLogoutSuccessHandler implements LogoutSuccessHandler {
+       @Override
+       public void onLogoutSuccess(HttpServletRequest request, HttpServletResponse response,
+                                   Authentication authentication) throws IOException, ServletException {
+           // 设置返回值
+           Result result = new Result(Code.CODE_FAIL, "注销成功");
+   
+           // 设置返回消息类型
+           response.setHeader("Content-type", "text/html;charset=UTF-8");
+           response.setCharacterEncoding("utf-8");
+           response.setContentType("application/json;charset=UTF-8");
+   
+           // 返回给前端
+           response.getWriter().write(new ObjectMapper().writeValueAsString(result));
+       }
+   }
+   ```
+
+2. 在`SecurityConfig`中进行配置
+
+   ```java
+   // 自定义注销逻辑
+   @Autowired
+   private MyLogoutSuccessHandler logoutSuccessHandler;
+   
+   @Override
+   protected void configure(HttpSecurity http) throws Exception {
+       http.authorizeRequests()
+           // 省略......
+   
+           // 自定义注销
+           .and()
+           .logout()
+           .logoutUrl("/users/logout")
+           .logoutSuccessHandler(logoutSuccessHandler)
+           // 删除cookies
+           .deleteCookies("JSESSIONID")
+   }
+   ```
+
+3. postman测试
+
+   <img src="http://cdn.zhangb.top/logout.jpg" alt="logout" style="zoom:50%;" />
+
+## 5、配置多账号登录
+
+1. `MySessionInformationExpiredStrategy`：实现`SessionInformationExpiredStrategy`接口，自定义多账户登录
+
+   ```java
+   /**
+    * 自定义多账号登录逻辑
+    */
+   @Component
+   public class MySessionInformationExpiredStrategy implements SessionInformationExpiredStrategy {
+       @Override
+       public void onExpiredSessionDetected(SessionInformationExpiredEvent event) throws IOException,
+               ServletException {
+           HttpServletResponse response = event.getResponse();
+           // 设置返回值
+           Result result = new Result(Code.CODE_FAIL, "多账户登录");
+   
+           // 设置返回消息类型
+           response.setHeader("Content-type", "text/html;charset=UTF-8");
+           response.setCharacterEncoding("utf-8");
+           response.setContentType("application/json;charset=UTF-8");
+   
+           // 返回给前端
+           response.getWriter().write(new ObjectMapper().writeValueAsString(result));
+       }
+   }
+   ```
+
+2. 在`SecurityConfig`中进行配置
+
+   ```java
+   // 自定义多账户登录逻辑
+   @Autowired
+   private MySessionInformationExpiredStrategy sessionStrategy;
+   
+   @Override
+   protected void configure(HttpSecurity http) throws Exception {
+       // 开启跨域
+       http.cors().and().csrf().disable();
+   
+       http.authorizeRequests()
+           // 省略......
+   
+           // 自定义多账户登录
+           .and()
+           .sessionManagement()
+           // 一个账号最多支持一个用户登录
+           .maximumSessions(1)
+           .expiredSessionStrategy(sessionStrategy);
+   }
+   ```
+
+## 6、添加JWT完善登录流程
+
+1. 在application.yml中配置jwt信息
+
+   ```yml
+   jwt:
+     # token有效期1天
+     expiration: 86400
+     secret: promise
+     # 请求头中token的前缀
+     tokenHead: Bearer
+     # token保存在请求头中的位置
+     tokenHeader: Authorization
+   ```
+
+2. 新建utils包，在里面添加`JwtTokenUtil`工具类
+
+   ```java
+   @Component
+   public class JwtTokenUtil {
+       private static final String CLAIM_KEY_USERNAME = "promise";
+       private static final String CLAIM_KEY_CREATED = "created";
+       @Value("${jwt.secret}")
+       private String secret;
+       @Value("${jwt.expiration}")
+       private Long expiration;
+       @Value("${jwt.tokenHead}")
+       private String tokenHead;
+   
+       /**
+        * 根据负责生成JWT的token
+        */
+       private String generateToken(Map<String, Object> claims) {
+           return Jwts.builder()
+                   .setClaims(claims)
+                   .setExpiration(generateExpirationDate())
+                   .signWith(SignatureAlgorithm.HS512, secret)
+                   .compact();
+       }
+   
+       /**
+        * 从token中获取JWT中的负载
+        */
+       private Claims getClaimsFromToken(String token) throws TokenException {
+           Claims claims = null;
+           try {
+               claims = Jwts.parser()
+                       .setSigningKey(secret)
+                       .parseClaimsJws(token)
+                       .getBody();
+           } catch (Exception e) {
+               throw new TokenException("token验证失败");
+           }
+           return claims;
+       }
+   
+       /**
+        * 生成token的过期时间
+        */
+       private Date generateExpirationDate() {
+           return new Date(System.currentTimeMillis() + expiration * 1000);
+       }
+   
+       /**
+        * 从token中获取登录用户名
+        */
+       public String getUserNameFromToken(String token) {
+           String username;
+           try {
+               Claims claims = getClaimsFromToken(token);
+               username = claims.getSubject();
+           } catch (Exception e) {
+               username = null;
+           }
+           return username;
+       }
+   
+       /**
+        * 验证token是否还有效
+        *
+        * @param token       客户端传入的token
+        * @param userDetails 从数据库中查询出来的用户信息
+        */
+       public boolean validateToken(String token, UserDetails userDetails) {
+           String username = getUserNameFromToken(token);
+           return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
+       }
+   
+       /**
+        * 判断token是否已经失效
+        */
+       private boolean isTokenExpired(String token) {
+           Date expiredDate = getExpiredDateFromToken(token);
+           return expiredDate.before(new Date());
+       }
+   
+       /**
+        * 从token中获取过期时间
+        */
+       private Date getExpiredDateFromToken(String token) {
+           Claims claims = getClaimsFromToken(token);
+           return claims.getExpiration();
+       }
+   
+       /**
+        * 根据用户信息生成token
+        */
+       public String generateToken(UserDetails userDetails) {
+           Map<String, Object> claims = new HashMap<>();
+           claims.put(CLAIM_KEY_USERNAME, userDetails.getUsername());
+           claims.put(CLAIM_KEY_CREATED, DateUtil.date());
+           return generateToken(claims);
+       }
+   
+       /**
+        * 当原来的token没过期时是可以刷新的
+        *
+        * @param oldToken 带tokenHead的token
+        */
+       public String refreshHeadToken(String oldToken) {
+           if (StrUtil.isEmpty(oldToken)) {
+               return null;
+           }
+           String token = oldToken.substring(tokenHead.length());
+           if (StrUtil.isEmpty(token)) {
+               return null;
+           }
+           //token校验不通过
+           Claims claims = getClaimsFromToken(token);
+           if (Objects.isNull(claims)) {
+               return null;
+           }
+           //如果token已经过期，不支持刷新
+           if (isTokenExpired(token)) {
+               return null;
+           }
+           //如果token在30分钟之内刚刷新过，返回原token
+           if (tokenRefreshJustBefore(token, 30 * 60)) {
+               return token;
+           } else {
+               claims.put(CLAIM_KEY_CREATED, new Date());
+               return generateToken(claims);
+           }
+       }
+   
+       /**
+        * 判断token在指定时间内是否刚刚刷新过
+        *
+        * @param token 原token
+        * @param time  指定时间（秒）
+        */
+       private boolean tokenRefreshJustBefore(String token, int time) {
+           Claims claims = getClaimsFromToken(token);
+           Date created = claims.get(CLAIM_KEY_CREATED, Date.class);
+           Date refreshDate = new Date();
+           //刷新时间在创建时间的指定时间内
+           return 
+              refreshDate.after(created) && refreshDate.before(DateUtil.offsetSecond(created, time));
+       }
+   }
+   ```
+
+3. 新建token处理过滤器`JwtAuthenticationTokenFilter`，实现`OncePerRequestFilter`接口，校验请求头中的token字符串
+
+   ```java
+   /**
+    * token处理过滤器
+    */
+   @Component
+   public class JwtAuthenticationTokenFilter extends OncePerRequestFilter {
+       @Autowired
+       private UserServiceImpl userService;
+       @Value("${jwt.tokenHeader}")
+       private String tokenHeader;
+       @Autowired
+       private JwtTokenUtil jwtTokenUtil;
+       @Value("${jwt.tokenHead}")
+       private String tokenHead;
+       
+       @Override
+       protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
+                                       FilterChain filterChain) throws ServletException, IOException {
+           String authHeader = request.getHeader(this.tokenHeader);
+           if (authHeader != null && authHeader.startsWith(this.tokenHead)) {
+               String authToken = authHeader.substring(this.tokenHead.length());// "Bearer "
+               String username = jwtTokenUtil.getUserNameFromToken(authToken);
+               if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                   UserDetails userDetails = userService.loadUserByUsername(username);
+                   if (jwtTokenUtil.validateToken(authToken, userDetails)) {
+                       UsernamePasswordAuthenticationToken authentication =
+                               new UsernamePasswordAuthenticationToken(
+                                       userDetails, null, userDetails.getAuthorities());
+                       authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                       SecurityContextHolder.getContext().setAuthentication(authentication);
+                   }
+               }
+           }
+           filterChain.doFilter(request, response);
+       }
+   }
+   ```
+
+4. 在`SecurityConfig`配置类中添加token处理过滤器，把它放在`UsernamePasswordAuthenticationFilter`过滤器前面
+
+   ```java
+   / 自定义token验证过滤器
+       @Autowired
+       private JwtAuthenticationTokenFilter jwtAuthenticationTokenFilter;
+   
+   @Override
+   protected void configure(HttpSecurity http) throws Exception {
+       http.authorizeRequests()
+           // 省略......
+   
+           .and()
+           // 添加自定义的token验证过滤器
+           .addFilterBefore(jwtAuthenticationTokenFilter,
+                            UsernamePasswordAuthenticationFilter.class)
+           .exceptionHandling()
+           // 自定义无权访问
+           .accessDeniedHandler(accessDeniedHandler)
+           // 自定义未登录
+           .authenticationEntryPoint(entryPoint);
+   }
+   ```
+
+5. 新建一个`TokenException`自定义异常类，用来接收与token有关的异常
+
+   ```java
+   public class TokenException extends RuntimeException {
+       private String message;
+   
+       public TokenException(String message) {
+           super(message);
+           this.message = message;
+       }
+   
+       @Override
+       public String getMessage() {
+           return message;
+       }
+   
+       public void setMessage(String message) {
+           this.message = message;
+       }
+   }
+   ```
+
+6. 修改`MyAuthenticationAccessHandler`类，要求登录成功后，向前端返回token字符串
+
+   ```java
+   /**
+    * 自定义登录成功逻辑
+    */
+   @Component
+   public class MyAuthenticationAccessHandler implements AuthenticationSuccessHandler {
+   
+       @Autowired
+       private UserServiceImpl userService;
+       @Autowired
+       private JwtTokenUtil jwtTokenUtil;
+       @Value("${jwt.tokenHead}")
+       private String tokenHead;
+   
+       @Override
+       public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
+                                           Authentication authentication) throws IOException,
+               ServletException, TokenException {
+           // 根据userDetailsService生成token
+           String username = authentication.getName();
+           String token = jwtTokenUtil.generateToken(userService.loadUserByUsername(username));
+           if (StrUtil.isEmpty(token)) throw new TokenException("token生成失败");
+   
+           // 设置返回值
+           Map<String, Object> data = new HashMap<>();
+           data.put("token", token);
+           data.put("tokenHead", tokenHead);
+           Result result = new Result(Code.CODE_SUCCESS, "登录成功", data);
+   
+           // 设置返回消息类型
+           response.setHeader("Content-type", "text/html;charset=UTF-8");
+           response.setCharacterEncoding("utf-8");
+           response.setContentType("application/json;charset=UTF-8");
+   
+           // 返回给前端
+           response.getWriter().write(new ObjectMapper().writeValueAsString(result));
+       }
+   }
+   ```
+
+7. 在controller包下，新建一个`ProjectAdvice`类，用来统一处理系统会出现的异常
+
+   ```java
+   @RestControllerAdvice
+   public class ProjectAdvice {
+       @ExceptionHandler(TokenException.class)
+       public Result doTokenException(TokenException e) {
+           return new Result(Code.CODE_FAIL, e.getMessage());
+       }
+   }
+   ```
+
+8. postman测试
+
+   <img src="http://cdn.zhangb.top/token.jpg" alt="token" style="zoom:50%;" />
+
+## 7、添加Token刷新功能
+
+1. 在`UserService`中添加刷新Token的函数，并且在`UserServiceImpl`中实现
+
+   ```java
+   public interface UserService extends IService<User> {
+       String refreshToken(String oldToken);
+   }
+   ```
+
+   ```java
+   @Service
+   public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserService,
+           UserDetailsService {
+       @Autowired
+       private JwtTokenUtil jwtTokenUtil;
+   
+       @Override
+       public String refreshToken(String oldToken) {
+           return jwtTokenUtil.refreshHeadToken(oldToken);
+       }
+   }
+   ```
+
+2. 在`UserController`类中添加刷新Token的接口
+
+   ```java
+   @PostMapping("/refreshToken")
+   @ResponseBody
+   public Result refreshToken(HttpServletRequest request) {
+       String token = request.getHeader(tokenHeader);
+       String refreshToken = userService.refreshToken(token);
+       Integer code = StrUtil.isEmpty(refreshToken) ? Code.CODE_FAIL : Code.CODE_SUCCESS;
+       String message = StrUtil.isEmpty(refreshToken) ? "刷新token失败" : "刷新token成功";
+       Map<String, Object> data = new HashMap<>();
+       data.put("token", refreshToken);
+       data.put("tokenHead", tokenHead);
+       return new Result(code, message, data);
+   }
+   ```
+
+3. postman测试
+
+   - 刷新token成功
+
+     <img src="http://cdn.zhangb.top/refresh_token.jpg" alt="refresh_token" style="zoom:50%;" />
+
+   - 刷新token失败
+
+     <img src="http://cdn.zhangb.top/refersh_token_error.jpg" alt="refersh_token_error" style="zoom:50%;" />
+
+   - token认证失败
+
+     <img src="http://cdn.zhangb.top/token_authentication_error.jpg" alt="token_authentication_error" style="zoom:50%;" />
+
+## 8、开启csrf保护（REST风格不可开启）
 
 > 什么是csrf
 >

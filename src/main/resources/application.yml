@@ -10,3 +10,12 @@ mybatis-plus:
     db-config:
       table-prefix: tb_
       id-type: auto
+
+jwt:
+  # token有效期1天
+  expiration: 86400
+  secret: promise
+  # 请求头中token的前缀
+  tokenHead: Bearer
+  # token保存在请求头中的位置
+  tokenHeader: Authorization

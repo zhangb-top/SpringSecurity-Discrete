@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.promise.dao.UserDao;
 import com.promise.pojo.User;
 import com.promise.service.UserService;
+import com.promise.utils.JwtTokenUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.AuthorityUtils;
@@ -22,6 +23,9 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
     @Autowired
     private UserDao userDao;
 
+    @Autowired
+    private JwtTokenUtil jwtTokenUtil;
+
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         QueryWrapper<User> wrapper = new QueryWrapper<>();
@@ -34,5 +38,10 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
                 AuthorityUtils.commaSeparatedStringToAuthorityList(user.getRole() + "," + user.getPermissions());
         return new org.springframework.security.core.userdetails.User(username,
                 user.getPassword(), grantedAuthorities);
+    }
+
+    @Override
+    public String refreshToken(String oldToken) {
+        return jwtTokenUtil.refreshHeadToken(oldToken);
     }
 }
